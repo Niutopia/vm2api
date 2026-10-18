@@ -371,7 +371,7 @@ proxyPool = new ProxyPool({
   egressCheck: (proxy) => proxyEgressReady(proxy, cfg.paths.project),
   repairEgress: (proxy) => ensureProxyEgress(cfg.paths.project, proxy),
 })
-// An upgrade replaces bin/ files; slots mounting run/slot-guest-bin must see the new ones.
+// An upgrade replaces bin/ files; slots mounting data/run/slot-guest-bin must see the new ones.
 try {
   refreshSlotGuestBinDir(cfg.paths.project)
 } catch (err) {

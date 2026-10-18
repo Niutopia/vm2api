@@ -703,12 +703,18 @@ function readFingerprintSmbios(kvmDir) {
 
 /**
  * Host directory bind-mounted into slots: only kin-worker + kin-kernel, never the full deploy
- * bin/ (which also holds kin-egress, kin-api-kernel, etc.). Entries are hard links (copies across
- * filesystems): a symlink to the host path dangles inside the slot, which never sees that path.
+ * bin/ (which also holds kin-egress, kin-api-kernel, etc.). It sits under data/: the control
+ * container bind-mounts only bin/, data/, share/, vms/ and src/config, so a dir elsewhere would
+ * exist only inside it and the host would mount an empty one into the slot. Entries are hard
+ * links (copies across mounts): a symlink to the host path dangles inside the slot.
  */
+export function slotGuestBinDir(projectRoot) {
+  return path.join(projectRoot, 'data', 'run', 'slot-guest-bin')
+}
+
 export function ensureSlotGuestBinDir(projectRoot, { workerBin, kernelBin } = {}) {
   if (!projectRoot) throw new Error('projectRoot required')
-  const dir = path.join(projectRoot, 'run', 'slot-guest-bin')
+  const dir = slotGuestBinDir(projectRoot)
   fs.mkdirSync(dir, { recursive: true, mode: 0o755 })
   const link = (name, target) => {
     // The dir is shared by every slot: a slot that does not mount a binary must not remove it.
@@ -746,7 +752,7 @@ export function ensureSlotGuestBinDir(projectRoot, { workerBin, kernelBin } = {}
 
 /** Re-point an existing staging dir after host binaries were replaced (e.g. on control start). */
 export function refreshSlotGuestBinDir(projectRoot) {
-  if (!projectRoot || !fs.existsSync(path.join(projectRoot, 'run', 'slot-guest-bin'))) return null
+  if (!projectRoot || !fs.existsSync(slotGuestBinDir(projectRoot))) return null
   return ensureSlotGuestBinDir(projectRoot, { workerBin: WORKER_BIN, kernelBin: kernelBinPath() || null })
 }
 
