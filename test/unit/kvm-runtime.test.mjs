@@ -72,7 +72,9 @@ test('kvm docker run mounts slot paths, stop-timeout 30, memory overhead', () =>
   assert.ok(args.includes('/data/vms/vm-02/cli-home:/slot/home'))
   assert.ok(args.includes('/data/vms/vm-02/run:/slot/run'))
   assert.ok(args.includes('/data/vms/vm-02/kvm:/slot/kvm'))
-  assert.ok(args.includes(`${path.join(kvmArgsProjectRoot, 'data', 'run', 'slot-guest-bin')}:/opt/kin-guest/usr/local/bin:ro`))
+  assert.ok(
+    args.includes(`${path.join(kvmArgsProjectRoot, 'data', 'run', 'slot-guest-bin')}:/opt/kin-guest/usr/local/bin:ro`),
+  )
   assert.ok(args.includes('kin.vm.runtime=kvm'))
   assert.ok(args.includes('KIN_KVM_ACCEL=tcg'))
   assert.ok(args.includes('KIN_KVM_MEMORY_MB=1024'))
