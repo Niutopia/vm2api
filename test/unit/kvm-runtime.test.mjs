@@ -109,6 +109,37 @@ test('slotGuestBinMountArgs mounts a staging dir with only kin-worker and kin-ke
   fs.rmSync(root, { recursive: true, force: true })
 })
 
+test('slot-guest-bin entries resolve inside the slot and follow host replacements', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kin-guest-bin-'))
+  const deployBin = path.join(root, 'deploy-bin')
+  fs.mkdirSync(deployBin, { recursive: true })
+  const workerBin = path.join(deployBin, 'kin-worker')
+  const kernelBin = path.join(deployBin, 'kin-kernel')
+  fs.writeFileSync(workerBin, 'worker-v1', { mode: 0o755 })
+  fs.writeFileSync(kernelBin, 'kernel-v1', { mode: 0o755 })
+  const stage = ensureSlotGuestBinDir(root, { workerBin, kernelBin })
+  // The slot only sees the mounted dir; a symlink to the host path would dangle there.
+  for (const name of ['kin-worker', 'kin-kernel']) {
+    const st = fs.lstatSync(path.join(stage, name))
+    assert.equal(st.isSymbolicLink(), false, name)
+    assert.equal(st.mode & 0o777, 0o755, name)
+  }
+  assert.equal(fs.readFileSync(path.join(stage, 'kin-worker'), 'utf8'), 'worker-v1')
+  const tmp = `${workerBin}.new`
+  fs.writeFileSync(tmp, 'worker-v2', { mode: 0o755 })
+  fs.renameSync(tmp, workerBin)
+  ensureSlotGuestBinDir(root, { workerBin, kernelBin })
+  assert.equal(fs.readFileSync(path.join(stage, 'kin-worker'), 'utf8'), 'worker-v2')
+  assert.equal(fs.readFileSync(path.join(stage, 'kin-kernel'), 'utf8'), 'kernel-v1')
+  // A GPT slot mounts no kernel; the shared dir keeps it for Claude slots.
+  ensureSlotGuestBinDir(root, { workerBin, kernelBin: null })
+  assert.deepEqual(fs.readdirSync(stage).sort(), ['kin-kernel', 'kin-worker'])
+  fs.rmSync(kernelBin)
+  ensureSlotGuestBinDir(root, { workerBin, kernelBin })
+  assert.deepEqual(fs.readdirSync(stage), ['kin-worker'])
+  fs.rmSync(root, { recursive: true, force: true })
+})
+
 test('slotGuestBinMountArgs falls back to file mounts without projectRoot', () => {
   assert.deepEqual(
     slotGuestBinMountArgs({
