@@ -222,7 +222,10 @@ test('OAuth cli-hop applies the resolved Protocol custom persona template', asyn
     await handler.handleProtocol(req, response, 'anthropic.messages', '/v1/messages')
     assert.equal(response.status, 503)
     assert.ok(prepared?.body)
-    assert.equal(prepared.body.system.length, 2)
+    // billing first (no cache marker), then identity and the custom template
+    assert.equal(prepared.body.system.length, 3)
+    assert.match(String(prepared.body.system[0].text), /^x-anthropic-billing-header:/)
+    assert.equal(prepared.body.system[0].cache_control, undefined)
     assert.ok(prepared.body.system.some((block) => String(block.text || '').includes('CUSTOM_PERSONA UTC')))
   } finally {
     fs.rmSync(root, { recursive: true, force: true })

@@ -167,7 +167,6 @@ function stabilizeMessageBudgets(body) {
   })
   return changed ? { ...body, messages } : body
 }
-const OFFICIAL_CACHE = Object.freeze({ type: 'ephemeral' })
 
 function textOf(block) {
   if (typeof block === 'string') return block
@@ -191,7 +190,7 @@ export function officialSystemTemplate(system, ttl = DEFAULT_CACHE_TTL) {
   return out
 }
 
-/** One marker, on the last text of the current tail, ttl omitted. */
+/** One marker, on the last text of the current tail, with the request's cache TTL. */
 function officialMessageMarker(messages, ttl = DEFAULT_CACHE_TTL) {
   if (!Array.isArray(messages) || messages.length === 0) return messages
   const next = messages.map((message) => {
