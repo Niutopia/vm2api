@@ -2,6 +2,7 @@
 
 ## 未发布
 
+- 定时测试新增「间隔」频率（#593）：`interval_minutes`（10 分钟–7 天）加每轮随机延迟 `jitter_min_minutes`～`jitter_max_minutes`（0–24 小时）。首次在 `time`（所在时区的下一个该时刻）运行，之后每次 = 上次实际运行 + 间隔 + 本轮随机延迟；算好的 `next_run_at` 存进计划，重启后沿用，停机期间错过的不补跑，按整数个间隔顺延。只改模型、题目等不动时间设置时保留已排好的下一次。可存多条题目 `prompts`（最多 20 条、合计 32000 字），每次随机抽一条；只有 `prompt` 的旧计划不变。同步到全部槽与全局默认模板都带上间隔和题目。每小时 / 每天 / 每周照旧走 cron。
 - 模型附加句改为按档开关，默认关闭。关闭时 `{{model_sentence}}` 不渲染；打开后才取 `model_env_extra` 里当前模型的句子。清空模板块后也不追加。
 - 网关生成的 billing 与 cli-node 缺失 billing 时的兜底头改为 `cc_entrypoint=sdk-cli`，与 2.1.303 抓包一致；调用方自带的 billing 不改写。出站 UA 已是 `(external, sdk-cli)`，`cc_turn_origin` 仍为 `sdk`。所有档位的出站 billing 字节随之变化，各会话首轮重建一次缓存。
 - 请求日志的 `outbound_headers` 改为新 cli-node 在最终 fetch 前回传的脱敏请求头，新增采集来源；Node → worker 中间头另存 `worker_envelope_headers`。流式与非流式入站均支持，内部事件不发给客户端、不触发提交或上游 idle 计时；旧 CLI 未回传时明确显示未获取，旧日志不冒充最终值。需同时更新 Node、web 与新 cli-node；本轮尚未发布 payload 或部署。
