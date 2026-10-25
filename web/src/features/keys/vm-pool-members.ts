@@ -37,3 +37,13 @@ export function saveableMemberIds(
   const known = new Set(vms.map((vm) => vm.id))
   return ids.filter((id) => known.has(id) && !owners.has(id))
 }
+
+/** Max / Pro / GPT plan, or 空槽 when the slot has no account yet. */
+export function slotPlanLabel(vm: Vm) {
+  const tier = String(vm.account_tier || '').toLowerCase()
+  if (tier === 'max') return 'Max'
+  if (tier === 'pro') return 'Pro'
+  if (vm.plan_type) return `GPT · ${vm.plan_type}`
+  if (tier && tier !== 'none') return tier
+  return ''
+}

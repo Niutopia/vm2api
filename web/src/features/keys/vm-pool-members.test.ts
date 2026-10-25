@@ -5,6 +5,7 @@ import {
   missingMemberIds,
   poolOwners,
   saveableMemberIds,
+  slotPlanLabel,
 } from './vm-pool-members'
 
 const pool = (id: string, vm_ids: string[]): VmPool => ({
@@ -42,5 +43,17 @@ describe('pool membership helpers', () => {
         owners
       )
     ).toEqual(['vm-01', 'vm-03'])
+  })
+})
+
+describe('slot plan label on the pool table', () => {
+  it('shows Max / Pro, a GPT plan, or 空槽 for a slot without an account', () => {
+    expect(slotPlanLabel({ id: 'a', account_tier: 'max' } as Vm)).toBe('Max')
+    expect(slotPlanLabel({ id: 'b', account_tier: 'PRO' } as Vm)).toBe('Pro')
+    expect(slotPlanLabel({ id: 'c', plan_type: 'plus' } as Vm)).toBe(
+      'GPT · plus'
+    )
+    expect(slotPlanLabel({ id: 'd' } as Vm)).toBe('')
+    expect(slotPlanLabel({ id: 'e', account_tier: 'none' } as Vm)).toBe('')
   })
 })

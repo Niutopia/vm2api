@@ -199,7 +199,7 @@ export function KeysPage() {
       description='发给客户端的 sk-vm- 密钥。请求走这张密钥，不要把主控密钥写进环境变量。'
       extra={<Button onClick={() => setCreateOpen(true)}>生成</Button>}
     >
-      {isAdmin ? <VmPoolsCard vms={vmItems} /> : null}
+      {isAdmin ? <VmPoolsCard vms={vmItems} keys={keys} /> : null}
       <QueryGate
         loading={q.isLoading}
         error={q.error}
