@@ -69,6 +69,53 @@ export function Panel({
   )
 }
 
+/** A Panel whose body folds away; the header keeps a one-line summary visible. */
+export function FoldPanel({
+  title,
+  hint,
+  meta,
+  open,
+  onOpenChange,
+  defaultOpen = false,
+  children,
+}: {
+  title: string
+  hint?: React.ReactNode
+  meta?: React.ReactNode
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  defaultOpen?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <Collapsible
+      open={open}
+      onOpenChange={onOpenChange}
+      defaultOpen={defaultOpen}
+      className='flex min-w-0 flex-col overflow-hidden rounded-xl border bg-card'
+    >
+      <CollapsibleTrigger className='flex w-full cursor-pointer flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-3 text-left transition-colors duration-200 hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none data-[state=open]:border-b data-[state=open]:[&_svg]:rotate-180'>
+        <span className='min-w-0'>
+          <span className='block text-sm font-semibold'>{title}</span>
+          {hint ? (
+            <span className='block text-xs leading-5 text-muted-foreground'>
+              {hint}
+            </span>
+          ) : null}
+        </span>
+        <span className='flex min-w-0 items-center gap-2 text-xs text-muted-foreground'>
+          {meta}
+          <ChevronDown
+            className='size-4 shrink-0 transition-transform duration-200'
+            aria-hidden='true'
+          />
+        </span>
+      </CollapsibleTrigger>
+      <CollapsibleContent>{children}</CollapsibleContent>
+    </Collapsible>
+  )
+}
+
 export function Segmented<T extends string>({
   value,
   options,

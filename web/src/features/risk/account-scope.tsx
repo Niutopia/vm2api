@@ -1,118 +1,66 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { JevInterceptConfig, JevScopeOption } from '@/types/panel-routing'
-import { ChevronDown } from 'lucide-react'
+import type { JevInterceptConfig, JevScopeAccount } from '@/types/panel-routing'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useServerDraft } from '@/hooks/use-server-draft'
-import { Button } from '@/components/ui/button'
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible'
-import { Textarea } from '@/components/ui/textarea'
 import { SaveBar } from '@/features/settings/save-bar'
-import { Group } from './blocks'
-import { type AccountScope, scopeConfigured, scopeMatches } from './model'
+import { FoldPanel } from './blocks'
 import { jevInterceptQueryOptions } from './queries'
+import {
+  draftOf,
+  reviewedUnder,
+  sameDraft,
+  scopeBody,
+  type ScopeMode,
+} from './scope-mode'
 
-type Draft = {
-  account_platform_plans: string[]
-  account_ids: string
+function planLabel(account: JevScopeAccount) {
+  const [platform, plan] = String(account.scope_key || '').split(':')
+  if (platform === 'gpt') return `GPT · ${plan || '未标注'}`
+  if (plan === 'max') return 'Max'
+  if (plan === 'pro') return 'Pro'
+  return '未标注'
 }
 
-function draftOf(data: JevInterceptConfig): Draft {
-  return {
-    account_platform_plans: data.account_platform_plans || [],
-    account_ids: (data.account_ids || []).join('\n'),
-  }
-}
-
-function linesOf(text: string) {
-  return text
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-}
-
-function scopeOf(draft: Draft): AccountScope {
-  return {
-    account_platform_plans: draft.account_platform_plans,
-    account_ids: linesOf(draft.account_ids),
-  }
-}
-
-function sameScope(left: AccountScope, right: AccountScope) {
-  return (
-    [...left.account_platform_plans].sort().join('\n') ===
-      [...right.account_platform_plans].sort().join('\n') &&
-    [...left.account_ids].sort().join('\n') ===
-      [...right.account_ids].sort().join('\n')
-  )
-}
-
-function scopeDiffers(left: Draft, right: Draft) {
-  return !sameScope(scopeOf(left), scopeOf(right))
-}
-
-function Chip({
-  option,
-  active,
-  onToggle,
-}: {
-  option: JevScopeOption
-  active: boolean
-  onToggle: () => void
-}) {
-  return (
-    <button
-      type='button'
-      aria-pressed={active}
-      onClick={onToggle}
-      className={cn(
-        'flex cursor-pointer items-baseline gap-1.5 rounded-lg border px-3 py-1.5 text-xs transition-colors duration-150',
-        active
-          ? 'border-select-border bg-select-surface text-foreground'
-          : 'border-border bg-card text-muted-foreground hover:border-select-border/60 hover:text-foreground'
-      )}
-    >
-      <span>{option.label}</span>
-      <span className='tabular-nums opacity-60'>{option.count}</span>
-    </button>
-  )
-}
+const MODES: { id: ScopeMode; label: string; hint: string }[] = [
+  {
+    id: 'all',
+    label: '全部送审',
+    hint: '所有槽都送审，以后新建的槽也一样（GPT 槽另看「OpenAI 平台」开关）。',
+  },
+  {
+    id: 'custom',
+    label: '自己勾',
+    hint: '一个个勾：只审勾上的槽，以后新建的槽默认不送审。',
+  },
+]
 
 /**
- * 风控的账号范围，独立于当前关卡。按平台+套餐收窄，可收起。
- * 全空 = 所有账号都进关卡。指定账号和勾选是并集。
+ * 风控的送审范围：一个槽一行，直接看出哪些槽过四道关、哪些在接单却没送审。
+ * 后端规则不变（account_platform_plans / account_ids），只是换一种方式填。
  */
 export function AccountScopeSettings() {
   const qc = useQueryClient()
   const q = useQuery(jevInterceptQueryOptions())
-  const [draft, setDraft] = useServerDraft(q.data, draftOf, scopeDiffers)
+  const [draft, setDraft] = useServerDraft(
+    q.data,
+    draftOf,
+    (a, b) => !sameDraft(a, b)
+  )
   const [open, setOpen] = useState(false)
-
-  const saved = q.data ? draftOf(q.data) : null
-  const current = draft ? scopeOf(draft) : null
-  const dirty = !!current && !!saved && !sameScope(current, scopeOf(saved))
 
   const save = useMutation({
     mutationFn: () => {
       if (!draft) throw new Error('没有可保存的配置')
       return api<JevInterceptConfig>('/api/panel/jev-intercept', {
         method: 'PUT',
-        body: JSON.stringify({
-          account_platform_plans: draft.account_platform_plans,
-          account_ids: linesOf(draft.account_ids),
-          account_types: [],
-          account_plan_types: [],
-        }),
+        body: JSON.stringify(scopeBody(draft)),
       })
     },
     onSuccess: (data) => {
-      toast.success('已保存账号范围')
+      toast.success('已保存送审范围')
       setDraft(draftOf(data))
       qc.setQueryData(jevInterceptQueryOptions().queryKey, data)
     },
@@ -129,141 +77,195 @@ export function AccountScopeSettings() {
       </p>
     )
   }
-  if (!draft || !current) {
+  if (!draft || !q.data) {
     return <div className='h-12 animate-pulse rounded-xl bg-muted/40' />
   }
 
-  const inventory = q.data?.account_scope
-  const accounts = inventory?.accounts || []
-  const total = inventory?.accounts_total ?? accounts.length
-  const options = inventory?.account_platform_plan_options || []
-  const configured = scopeConfigured(current)
-  const matched = configured ? scopeMatches(current, accounts) : accounts
-  const selectedLabels = options
-    .filter((option) => draft.account_platform_plans.includes(option.id))
-    .map((option) => option.label)
-  const named = linesOf(draft.account_ids).length
-  const summary = configured
-    ? [
-        selectedLabels.join('、') || (named ? '指定账号' : '未选'),
-        named ? `另指定 ${named}` : '',
-        `命中 ${matched.length}/${total}`,
-      ]
-        .filter(Boolean)
-        .join(' · ')
-    : `全部账号 · ${total}`
-  const shown = open || dirty
+  const saved = draftOf(q.data)
+  const dirty = !sameDraft(draft, saved)
+  const accounts = q.data.account_scope?.accounts || []
+  const openai = q.data.openai_platform_enabled === true
+  const reviewed = (account: JevScopeAccount) =>
+    reviewedUnder(draft, account, openai)
+  const count = accounts.filter(reviewed).length
+  const gaps = accounts.filter(
+    (account) => account.schedulable && !reviewed(account)
+  )
+  const emptyCustom = draft.mode === 'custom' && !draft.picked.length
+  const mode = MODES.find((m) => m.id === draft.mode) || MODES[0]
 
-  const toggle = (id: string) =>
+  const setMode = (next: ScopeMode) =>
+    setDraft({
+      mode: next,
+      // Switching to 自己勾 starts from what the current choice reviews.
+      picked:
+        next === 'custom' && draft.mode !== 'custom'
+          ? accounts.filter(reviewed).map((a) => a.id)
+          : draft.picked,
+    })
+  const togglePick = (id: string, on: boolean) =>
     setDraft({
       ...draft,
-      account_platform_plans: draft.account_platform_plans.includes(id)
-        ? draft.account_platform_plans.filter((item) => item !== id)
-        : [...draft.account_platform_plans, id],
+      picked: on ? [...draft.picked, id] : draft.picked.filter((x) => x !== id),
     })
 
   return (
-    <Collapsible
-      open={shown}
+    <FoldPanel
+      title='送审范围'
+      hint='决定哪些槽的请求要过蒸馏、硬正则、拒答缓存和决策模型这四道关。没送审的槽，四道关全部跳过。'
+      open={open || dirty}
       onOpenChange={(next) => {
         if (!next && dirty) return
         setOpen(next)
       }}
-      className='rounded-xl border bg-card'
+      meta={
+        gaps.length ? (
+          <span className='text-[var(--status-caution)]'>
+            {gaps.length} 个接单中的槽没送审
+          </span>
+        ) : (
+          `${draft.mode === 'all' ? '全部送审' : '自己勾'} · 审 ${count} 个槽`
+        )
+      }
     >
-      <CollapsibleTrigger className='flex w-full cursor-pointer items-center justify-between gap-3 px-4 py-3 text-left transition-colors duration-200 hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none'>
-        <span className='shrink-0 text-sm font-semibold'>账号范围</span>
-        <span className='flex min-w-0 items-center gap-2 text-xs text-muted-foreground'>
-          <span className='truncate'>{summary}</span>
-          <ChevronDown
-            className={cn(
-              'size-4 shrink-0 transition-transform duration-200',
-              shown && 'rotate-180'
-            )}
-            aria-hidden='true'
-          />
-        </span>
-      </CollapsibleTrigger>
-      <CollapsibleContent className='space-y-6 border-t px-4 py-4'>
-        <p className='text-xs leading-5 text-muted-foreground'>
-          按平台和套餐决定哪些槽位进四道关。都不选 =
-          全部账号。指定账号和勾选取并集。只选 GPT 套餐时 Claude
-          照旧全进关卡；选了 Claude 套餐或指定了账号，才按槽位收窄 Claude。GPT
-          没设范围时仍看「OpenAI 平台」。
-        </p>
-
-        <Group
-          title='平台 · 套餐'
-          hint='数字是当前槽位数。同一套餐的不同写法合成一档，例如 Team 和 Business Premium 都是 Business。'
-          action={
-            draft.account_platform_plans.length ? (
-              <Button
-                type='button'
-                size='sm'
-                variant='ghost'
-                className='cursor-pointer text-xs'
-                onClick={() =>
-                  setDraft({ ...draft, account_platform_plans: [] })
-                }
-              >
-                清空
-              </Button>
-            ) : undefined
-          }
-        >
-          {options.length ? (
-            <div className='flex flex-wrap gap-2'>
-              {options.map((option) => (
-                <Chip
-                  key={option.id}
-                  option={option}
-                  active={draft.account_platform_plans.includes(option.id)}
-                  onToggle={() => toggle(option.id)}
-                />
-              ))}
-            </div>
+      <div className='space-y-4 px-4 py-4'>
+        <div className='flex flex-wrap items-center gap-x-4 gap-y-2 text-sm'>
+          <span>
+            {dirty ? '改完后' : '现在'}：审{' '}
+            <span className='font-semibold tabular-nums'>{count}</span> 个槽
+          </span>
+          {gaps.length ? (
+            <span className='rounded-md bg-[var(--status-caution)]/10 px-2 py-0.5 text-xs text-[var(--status-caution)]'>
+              {gaps.length} 个接单中的槽没送审：
+              {gaps.map((a) => a.name || a.id).join('、')}
+            </span>
           ) : (
-            <p className='text-xs text-muted-foreground'>还没有槽位。</p>
+            <span className='text-xs text-muted-foreground'>
+              接单中的槽都送审了
+            </span>
           )}
-        </Group>
-
-        <Group
-          title='指定账号'
-          hint='一行一个：槽位 id、邮箱或名称。留空即不按账号限制。'
-        >
-          <Textarea
-            aria-label='指定账号'
-            rows={3}
-            className='font-mono text-xs'
-            placeholder={'vm-02\naldanacharles9564@aol.com'}
-            value={draft.account_ids}
-            onChange={(event) =>
-              setDraft({ ...draft, account_ids: event.target.value })
-            }
-          />
-        </Group>
-
-        <div className='space-y-1 text-xs leading-5'>
-          <p className='font-medium'>
-            {configured
-              ? `当前范围命中 ${matched.length} / ${total} 个槽位`
-              : `当前范围：全部账号（${total} 个槽位）`}
-          </p>
-          {configured && !matched.length ? (
-            <p className='text-[var(--status-caution)]'>
-              没有槽位命中，等于所有请求都不检查。请重选。
-            </p>
-          ) : null}
         </div>
+
+        <div className='space-y-2'>
+          <div
+            role='group'
+            aria-label='送审方式'
+            className='inline-flex flex-wrap gap-1 rounded-lg border bg-muted/30 p-1'
+          >
+            {MODES.map((m) => (
+              <button
+                key={m.id}
+                type='button'
+                aria-pressed={draft.mode === m.id}
+                onClick={() => setMode(m.id)}
+                className={cn(
+                  'cursor-pointer rounded-md px-3 py-1.5 text-xs transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                  draft.mode === m.id
+                    ? 'bg-card text-foreground shadow-sm ring-1 ring-border'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+          <p className='text-xs text-muted-foreground'>{mode.hint}</p>
+        </div>
+
+        {/* 全部送审时每个槽都审，逐槽列表没有信息量，只在「自己勾」时显示。 */}
+        {draft.mode === 'all' ? null : accounts.length ? (
+          <div className='overflow-x-auto rounded-md border'>
+            <table className='w-full min-w-[520px] text-sm'>
+              <thead className='bg-muted/40 text-left text-xs text-muted-foreground'>
+                <tr>
+                  <th className='px-3 py-2 font-medium'>槽位</th>
+                  <th className='px-3 py-2 font-medium'>套餐</th>
+                  <th className='px-3 py-2 font-medium'>调度</th>
+                  <th className='px-3 py-2 font-medium'>送审</th>
+                </tr>
+              </thead>
+              <tbody>
+                {accounts.map((account) => {
+                  const on = reviewed(account)
+                  const locked = draft.mode !== 'custom'
+                  const label = planLabel(account)
+                  return (
+                    <tr key={account.id} className='border-t'>
+                      <td className='px-3 py-2 font-mono text-xs whitespace-nowrap'>
+                        {account.id}
+                        {account.name && account.name !== account.id ? (
+                          <span className='ml-1.5 font-sans text-muted-foreground'>
+                            {account.name}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className='px-3 py-2'>
+                        <span
+                          className={cn(
+                            'inline-block rounded-md px-2 py-0.5 text-xs font-medium',
+                            label === 'Max'
+                              ? 'bg-primary/10 text-primary'
+                              : 'bg-muted text-foreground',
+                            label === '未标注' &&
+                              'bg-transparent text-muted-foreground'
+                          )}
+                        >
+                          {label}
+                        </span>
+                      </td>
+                      <td className='px-3 py-2 text-xs whitespace-nowrap'>
+                        {account.schedulable ? (
+                          '接单中'
+                        ) : (
+                          <span className='text-muted-foreground'>关调度</span>
+                        )}
+                      </td>
+                      <td className='px-3 py-2'>
+                        <label className='flex items-center gap-2'>
+                          <input
+                            type='checkbox'
+                            className='size-4 accent-primary'
+                            aria-label={`${account.id} 送审`}
+                            checked={on}
+                            disabled={locked}
+                            onChange={(event) =>
+                              togglePick(account.id, event.target.checked)
+                            }
+                          />
+                          {!on && account.schedulable ? (
+                            <span className='text-xs text-[var(--status-caution)]'>
+                              四道关全跳过
+                            </span>
+                          ) : locked && on ? (
+                            <span className='text-xs text-muted-foreground'>
+                              全部送审
+                            </span>
+                          ) : null}
+                        </label>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className='text-xs text-muted-foreground'>还没有槽位。</p>
+        )}
 
         {dirty ? (
           <SaveBar
+            blockedReason={
+              emptyCustom
+                ? '至少勾一个槽；要所有槽都审，请选「全部送审」'
+                : undefined
+            }
             saving={save.isPending}
             onSave={() => save.mutate()}
-            onDiscard={() => q.data && setDraft(draftOf(q.data))}
+            onDiscard={() => setDraft(saved)}
           />
         ) : null}
-      </CollapsibleContent>
-    </Collapsible>
+      </div>
+    </FoldPanel>
   )
 }
