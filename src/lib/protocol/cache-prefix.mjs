@@ -533,6 +533,19 @@ function liveImageState(key, now) {
   return hit && now - hit.at < IMAGE_SESSION_IDLE_MS ? hit : null
 }
 
+/**
+ * Writes re-insert their key, so map order is last-write order. Drop from the
+ * front what a lookup already ignores, then the oldest past SESSION_LIMIT. A
+ * snapshot costs about as much heap as the request JSON (~0.5 MB at 200
+ * messages); kept until the size limit, 10k idle sessions held several GB.
+ */
+function sweep(map, idleMs, now) {
+  for (const [key, hit] of map) {
+    if (map.size <= SESSION_LIMIT && now - hit.at < idleMs) break
+    map.delete(key)
+  }
+}
+
 /** First message whose images stay: the newer half of those after `dropped`. */
 function nextImageFloor(messages, dropped) {
   const counts = messages.map((message, index) => (index > dropped ? messageImageCount(message) : 0))
@@ -773,7 +786,7 @@ export function prepareCachePrefix(
     // Where the caller's tail marker sat; a later turn reads it if it was written.
     tail: lastMarkedMessage(retained.body),
   })
-  if (sessions.size > SESSION_LIMIT) sessions.delete(sessions.keys().next().value)
+  sweep(sessions, SESSION_IDLE_MS, now)
   imageSessions.delete(imagesAt)
   imageSessions.set(imagesAt, {
     at: now,
@@ -783,7 +796,7 @@ export function prepareCachePrefix(
     ids: current.messages.map((record) => record.id),
     images: current.messages.map((record) => record.images || 0),
   })
-  if (imageSessions.size > SESSION_LIMIT) imageSessions.delete(imageSessions.keys().next().value)
+  sweep(imageSessions, IMAGE_SESSION_IDLE_MS, now)
   return {
     body: sent,
     turn: compared.turn,
@@ -808,4 +821,8 @@ export function confirmCachePrefix(sessionKey, now = Date.now()) {
 export function clearCachePrefixSessions() {
   sessions.clear()
   imageSessions.clear()
+}
+
+export function cachePrefixSessionCountsForTest() {
+  return { sessions: sessions.size, images: imageSessions.size }
 }
